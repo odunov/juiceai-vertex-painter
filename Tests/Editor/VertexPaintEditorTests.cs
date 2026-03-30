@@ -887,8 +887,7 @@ namespace JuiceAI.VertexPainter.Tests.Editor
                     containerTarget,
                     foundationTarget,
                     currentPaintTarget,
-                    visibleOwner,
-                    null);
+                    visibleOwner);
 
                 Assert.That(sceneTarget.OwnsPaint, Is.False);
                 Assert.That(sceneTarget.PaintAsset, Is.Null);
@@ -1603,8 +1602,7 @@ namespace JuiceAI.VertexPainter.Tests.Editor
                 containerTarget,
                 foundationTarget,
                 currentPaintTarget,
-                visibleOwner,
-                null);
+                visibleOwner);
         }
 
         private static VertexPainterWindow.TargetDescriptor CreateLiveContainerTargetDescriptor(
@@ -1702,8 +1700,7 @@ namespace JuiceAI.VertexPainter.Tests.Editor
                 containerTarget,
                 foundationTarget,
                 containerTarget,
-                visibleOwner,
-                null);
+                visibleOwner);
         }
 
         private static Mesh CreateTriangleMesh(string name)
