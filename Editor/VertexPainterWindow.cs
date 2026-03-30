@@ -44,8 +44,7 @@ namespace JuiceAI.VertexPainter.Editor
                 VertexPaintResolvedTarget containerTarget,
                 VertexPaintResolvedTarget foundationTarget,
                 VertexPaintResolvedTarget currentPaintTarget,
-                VertexPaintOwnershipLevel? visiblePaintOwner,
-                IVertexPaintMaterialAdapter adapter)
+                VertexPaintOwnershipLevel? visiblePaintOwner)
             {
                 GameObject = gameObject;
                 AuthoringRoot = authoringRoot;
@@ -57,7 +56,6 @@ namespace JuiceAI.VertexPainter.Editor
                 FoundationTarget = foundationTarget;
                 CurrentPaintTarget = currentPaintTarget;
                 VisiblePaintOwner = visiblePaintOwner;
-                Adapter = adapter;
             }
 
             public GameObject GameObject { get; }
@@ -70,7 +68,6 @@ namespace JuiceAI.VertexPainter.Editor
             public VertexPaintResolvedTarget FoundationTarget { get; }
             public VertexPaintResolvedTarget CurrentPaintTarget { get; }
             public VertexPaintOwnershipLevel? VisiblePaintOwner { get; }
-            public IVertexPaintMaterialAdapter Adapter { get; }
             public bool IsGeometryValid => GameObject != null && MeshFilter != null && Renderer != null && SourceMesh != null;
             public bool IsPaintable => IsGeometryValid && CurrentPaintTarget.IsAvailable;
 
@@ -207,22 +204,6 @@ namespace JuiceAI.VertexPainter.Editor
             if (!primary.CurrentPaintTarget.IsAvailable && !string.IsNullOrWhiteSpace(primary.CurrentPaintTarget.Reason))
             {
                 EditorGUILayout.HelpBox(primary.CurrentPaintTarget.Reason, MessageType.Warning);
-            }
-
-            if (primary.Adapter != null)
-            {
-                Material[] materials = primary.Renderer.sharedMaterials ?? Array.Empty<Material>();
-                string description = primary.Adapter.GetDescription(primary.Renderer, materials);
-                if (!string.IsNullOrWhiteSpace(description))
-                {
-                    EditorGUILayout.HelpBox(description, MessageType.Info);
-                }
-
-                string warning = primary.Adapter.GetWarning(primary.Renderer, materials);
-                if (!string.IsNullOrWhiteSpace(warning))
-                {
-                    EditorGUILayout.HelpBox(warning, MessageType.Warning);
-                }
             }
 
             int unpaintableCount = geometryCount - paintableCount;
@@ -458,7 +439,6 @@ namespace JuiceAI.VertexPainter.Editor
                     containerTarget,
                     foundationTarget);
                 VertexPaintOwnershipLevel? visiblePaintOwner = VertexPaintAuthoringContextUtility.GetVisiblePaintOwner(sceneTarget, containerTarget, foundationTarget);
-                IVertexPaintMaterialAdapter adapter = renderer != null ? VertexPaintMaterialAdapterRegistry.FindBestAdapter(renderer) : null;
 
                 yield return new TargetDescriptor(
                     targetObject,
@@ -470,8 +450,7 @@ namespace JuiceAI.VertexPainter.Editor
                     containerTarget,
                     foundationTarget,
                     currentPaintTarget,
-                    visiblePaintOwner,
-                    adapter);
+                    visiblePaintOwner);
             }
         }
 
@@ -479,12 +458,6 @@ namespace JuiceAI.VertexPainter.Editor
         {
             ClearScenePreviewEntries();
             lastSampledValue = -1f;
-
-            TargetDescriptor primary = CollectTargets().FirstOrDefault(target => target.IsGeometryValid && target.Adapter != null);
-            if (primary.IsGeometryValid && primary.Adapter != null)
-            {
-                activeChannel = primary.Adapter.GetDefaultChannel(primary.Renderer, primary.Renderer.sharedMaterials);
-            }
 
             Repaint();
             SceneView.RepaintAll();

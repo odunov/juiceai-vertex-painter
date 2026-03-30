@@ -18,8 +18,6 @@ When you paint a prefab instance in a scene, the tool resolves the shared prefab
 - `Editor/`
 - `Tests/Editor/`
 
-Shader-specific editor adapters can be added separately by implementing `IVertexPaintMaterialAdapter` in your own project or extension package.
-
 ## Installation
 
 Use one of these approaches:
