@@ -305,6 +305,85 @@ namespace JuiceAI.VertexPainter.Tests.Editor
         }
 
         [Test]
+        public void SharedContainerPaint_PrefabModeFirstPaint_ReusesSameSharedAssetInScene()
+        {
+            string tempRoot = CreateTempFolder();
+            VertexPainterSettings settings = VertexPainterSettings.instance;
+            string originalRoot = settings.GeneratedDataRoot;
+
+            try
+            {
+                settings.GeneratedDataRoot = $"{tempRoot}/Generated";
+                settings.SaveIfDirty();
+
+                string meshPath = $"{tempRoot}/TestMesh.asset";
+                string modulePrefabPath = $"{tempRoot}/Module.prefab";
+
+                Mesh meshAsset = CreateMeshAsset(meshPath);
+                CreatePrefab(modulePrefabPath, "ModuleRenderer", meshAsset);
+
+                string prefabPaintPath;
+                GameObject loadedModuleRoot = PrefabUtility.LoadPrefabContents(modulePrefabPath);
+                try
+                {
+                    VertexPainterWindow.TargetDescriptor liveTarget = CreateLiveContainerTargetDescriptor(
+                        loadedModuleRoot,
+                        modulePrefabPath,
+                        AssetDatabase.LoadAssetAtPath<GameObject>(modulePrefabPath));
+
+                    Assert.That(
+                        VertexPaintEditorUtility.TryEnsureTargetPaintAsset(
+                            liveTarget,
+                            liveTarget.ContainerTarget,
+                            "Create Prefab Paint",
+                            out VertexPaintAsset prefabPaint,
+                            out string prefabError),
+                        Is.True,
+                        prefabError);
+
+                    prefabPaint.OverwriteColors(CreateColorBuffer(meshAsset.vertexCount, new Color32(45, 180, 220, 255)));
+                    VertexPaintEditorUtility.RebuildStreamMesh(prefabPaint);
+                    prefabPaintPath = AssetDatabase.GetAssetPath(prefabPaint);
+
+                    PrefabUtility.SaveAsPrefabAsset(loadedModuleRoot, modulePrefabPath);
+                }
+                finally
+                {
+                    PrefabUtility.UnloadPrefabContents(loadedModuleRoot);
+                }
+
+                AssetDatabase.SaveAssets();
+                AssetDatabase.ImportAsset(modulePrefabPath, ImportAssetOptions.ForceUpdate);
+                VertexPaintEditorUtility.RefreshLoadedBindings();
+
+                EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                GameObject moduleInstance = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(modulePrefabPath));
+                VertexPainterWindow.TargetDescriptor sceneTarget = CreateSceneTargetDescriptor(moduleInstance, moduleInstance);
+
+                Assert.That(sceneTarget.ContainerTarget.PaintAsset, Is.Not.Null);
+                Assert.That(AssetDatabase.GetAssetPath(sceneTarget.ContainerTarget.PaintAsset), Is.EqualTo(prefabPaintPath));
+                Assert.That(
+                    VertexPaintEditorUtility.TryEnsureTargetPaintAsset(
+                        sceneTarget,
+                        sceneTarget.ContainerTarget,
+                        "Reuse Prefab Paint",
+                        out VertexPaintAsset reusedPaint,
+                        out string reuseError),
+                    Is.True,
+                    reuseError);
+                Assert.That(AssetDatabase.GetAssetPath(reusedPaint), Is.EqualTo(prefabPaintPath));
+
+                UnityEngine.Object.DestroyImmediate(moduleInstance);
+            }
+            finally
+            {
+                settings.GeneratedDataRoot = originalRoot;
+                settings.SaveIfDirty();
+                AssetDatabase.DeleteAsset(tempRoot);
+            }
+        }
+
+        [Test]
         public void ContainerResolution_UsesOutermostRoot_ForThreeLevelNestedPrefabSelection()
         {
             string tempRoot = CreateTempFolder();
@@ -1383,6 +1462,112 @@ namespace JuiceAI.VertexPainter.Tests.Editor
             {
                 UnityEngine.Object.DestroyImmediate(targetObject);
                 UnityEngine.Object.DestroyImmediate(mesh);
+            }
+        }
+
+        [Test]
+        public void BuildPaintAssetPath_UsesStableIdentityForSharedPrefabTargets()
+        {
+            string tempRoot = CreateTempFolder();
+            VertexPainterSettings settings = VertexPainterSettings.instance;
+            string originalRoot = settings.GeneratedDataRoot;
+
+            try
+            {
+                settings.GeneratedDataRoot = $"{tempRoot}/Generated";
+                settings.SaveIfDirty();
+
+                string meshPath = $"{tempRoot}/TestMesh.asset";
+                string leafPrefabPath = $"{tempRoot}/Leaf.prefab";
+                string outerPrefabPath = $"{tempRoot}/Outer.prefab";
+
+                Mesh meshAsset = CreateMeshAsset(meshPath);
+                CreatePrefab(leafPrefabPath, "Leaf", meshAsset);
+
+                GameObject outerRoot = new("Outer");
+                GameObject leafA = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(leafPrefabPath));
+                leafA.name = "Leaf";
+                leafA.transform.SetParent(outerRoot.transform, false);
+                GameObject leafB = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(leafPrefabPath));
+                leafB.name = "Leaf";
+                leafB.transform.SetParent(outerRoot.transform, false);
+                PrefabUtility.SaveAsPrefabAsset(outerRoot, outerPrefabPath);
+                UnityEngine.Object.DestroyImmediate(outerRoot);
+
+                EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+                GameObject outerInstance = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(outerPrefabPath));
+                GameObject sceneLeaf = outerInstance.transform.GetChild(1).gameObject;
+                VertexPainterWindow.TargetDescriptor sceneTarget = CreateSceneTargetDescriptor(sceneLeaf, outerInstance);
+
+                GameObject loadedOuterRoot = PrefabUtility.LoadPrefabContents(outerPrefabPath);
+                try
+                {
+                    GameObject liveLeaf = loadedOuterRoot.transform.GetChild(1).gameObject;
+                    VertexPainterWindow.TargetDescriptor liveTarget = CreateLiveContainerTargetDescriptor(
+                        liveLeaf,
+                        outerPrefabPath,
+                        AssetDatabase.LoadAssetAtPath<GameObject>(leafPrefabPath));
+
+                    string scenePath = VertexPaintEditorUtility.BuildPaintAssetPath(settings, sceneLeaf, meshAsset, sceneTarget.ContainerTarget);
+                    string livePath = VertexPaintEditorUtility.BuildPaintAssetPath(settings, liveLeaf, meshAsset, liveTarget.ContainerTarget);
+
+                    Assert.That(sceneTarget.ContainerTarget.RelativePath, Is.EqualTo("Leaf[1]"));
+                    Assert.That(liveTarget.ContainerTarget.RelativePath, Is.EqualTo(sceneTarget.ContainerTarget.RelativePath));
+                    Assert.That(scenePath, Is.EqualTo(livePath));
+                }
+                finally
+                {
+                    PrefabUtility.UnloadPrefabContents(loadedOuterRoot);
+                }
+
+                UnityEngine.Object.DestroyImmediate(outerInstance);
+            }
+            finally
+            {
+                settings.GeneratedDataRoot = originalRoot;
+                settings.SaveIfDirty();
+                AssetDatabase.DeleteAsset(tempRoot);
+            }
+        }
+
+        [Test]
+        public void CleanupUnusedGeneratedPaintAssets_DeletesAssetFilesAndEmptyFolders()
+        {
+            string tempRoot = CreateTempFolder();
+            VertexPainterSettings settings = VertexPainterSettings.instance;
+            string originalRoot = settings.GeneratedDataRoot;
+
+            try
+            {
+                settings.GeneratedDataRoot = $"{tempRoot}/Generated";
+                settings.SaveIfDirty();
+
+                string meshPath = $"{tempRoot}/TestMesh.asset";
+                Mesh meshAsset = CreateMeshAsset(meshPath);
+                string generatedAssetPath = $"{settings.GeneratedDataRoot}/ContainerPrefabs/Room/Leaf[0]_deadbeef00.asset";
+                EnsureFolderExists(Path.GetDirectoryName(generatedAssetPath).Replace('\\', '/'));
+
+                VertexPaintAsset generatedAsset = CreatePaintAsset(generatedAssetPath, meshAsset);
+                VertexPaintEditorUtility.EnsureStreamMesh(generatedAsset, "Create Stream", false);
+
+                Assert.That(
+                    VertexPaintEditorUtility.TryCleanupUnusedGeneratedPaintAssets(
+                        "Clean Generated Paint",
+                        out int deletedCount,
+                        out int keptCount,
+                        out string cleanupError),
+                    Is.True,
+                    cleanupError);
+                Assert.That(deletedCount, Is.EqualTo(1));
+                Assert.That(keptCount, Is.EqualTo(0));
+                Assert.That(AssetDatabase.LoadAssetAtPath<VertexPaintAsset>(generatedAssetPath), Is.Null);
+                Assert.That(AssetDatabase.IsValidFolder($"{settings.GeneratedDataRoot}/ContainerPrefabs/Room"), Is.False);
+            }
+            finally
+            {
+                settings.GeneratedDataRoot = originalRoot;
+                settings.SaveIfDirty();
+                AssetDatabase.DeleteAsset(tempRoot);
             }
         }
 

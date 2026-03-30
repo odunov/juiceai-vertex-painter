@@ -143,7 +143,8 @@ namespace JuiceAI.VertexPainter.Editor
             string scope = SanitizeFileName(ownershipTarget.ScopeLabel);
             string hierarchy = SanitizeFileName(GetOwnershipHierarchyPath(selectionTarget, ownershipTarget));
             string meshKey = GetMeshKey(sourceMesh);
-            string fullHash = Hash128.Compute($"{ownershipTarget.ScopeKey}|{ownershipTarget.ObjectKey}|{meshKey}").ToString();
+            string ownershipIdentity = GetGeneratedPaintAssetOwnershipIdentity(selectionTarget, ownershipTarget);
+            string fullHash = Hash128.Compute($"{ownershipIdentity}|{meshKey}").ToString();
             string hash = fullHash.Length <= 10 ? fullHash : fullHash.Substring(0, 10);
             string fileName = $"{hierarchy}_{hash}.asset";
 
@@ -789,6 +790,12 @@ namespace JuiceAI.VertexPainter.Editor
                 return false;
             }
 
+            string assetPath = NormalizeAssetPath(AssetDatabase.GetAssetPath(paintAsset));
+            if (string.IsNullOrWhiteSpace(assetPath))
+            {
+                return false;
+            }
+
             if (HasOtherLoadedBindingReferences(paintAsset, ignoredBinding))
             {
                 return false;
@@ -799,8 +806,13 @@ namespace JuiceAI.VertexPainter.Editor
                 return false;
             }
 
-            Undo.DestroyObjectImmediate(paintAsset);
-            return true;
+            bool deleted = AssetDatabase.DeleteAsset(assetPath);
+            if (deleted)
+            {
+                CleanupEmptyGeneratedFolders(VertexPainterSettings.instance.GeneratedDataRoot);
+            }
+
+            return deleted;
         }
 
         public static bool TryCleanupUnusedGeneratedPaintAssets(
@@ -851,6 +863,7 @@ namespace JuiceAI.VertexPainter.Editor
 
             Undo.CollapseUndoOperations(group);
             AssetDatabase.SaveAssets();
+            CleanupEmptyGeneratedFolders(generatedRoot);
             return true;
         }
 
@@ -1479,6 +1492,26 @@ namespace JuiceAI.VertexPainter.Editor
             return $"{mesh.name}|{mesh.vertexCount}|{mesh.GetInstanceID()}";
         }
 
+        private static string GetGeneratedPaintAssetOwnershipIdentity(
+            GameObject selectionTarget,
+            VertexPaintResolvedTarget ownershipTarget)
+        {
+            if (!ownershipTarget.IsAvailable)
+            {
+                return "Unavailable";
+            }
+
+            if (ownershipTarget.Level == VertexPaintOwnershipLevel.ContainerPrefab ||
+                ownershipTarget.Level == VertexPaintOwnershipLevel.FoundationPrefab)
+            {
+                string assetPath = NormalizeAssetPath(ownershipTarget.AssetPath);
+                string relativePath = GetOwnershipHierarchyPath(selectionTarget, ownershipTarget);
+                return $"{assetPath}|{relativePath}";
+            }
+
+            return $"{ownershipTarget.ScopeKey}|{ownershipTarget.ObjectKey}";
+        }
+
         private static bool IsGeneratedPaintAsset(VertexPaintAsset paintAsset)
         {
             if (paintAsset == null)
@@ -1596,6 +1629,62 @@ namespace JuiceAI.VertexPainter.Editor
             }
 
             return Path.Combine(projectRoot, normalizedAssetPath.Replace('/', Path.DirectorySeparatorChar));
+        }
+
+        private static void CleanupEmptyGeneratedFolders(string generatedRoot)
+        {
+            string normalizedRoot = NormalizeAssetPath(generatedRoot);
+            if (string.IsNullOrWhiteSpace(normalizedRoot) || !AssetDatabase.IsValidFolder(normalizedRoot))
+            {
+                return;
+            }
+
+            List<string> folders = GetGeneratedFoldersDeepestFirst(normalizedRoot);
+            foreach (string folder in folders)
+            {
+                if (string.Equals(folder, normalizedRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!AssetDatabase.IsValidFolder(folder) || !IsGeneratedFolderEmpty(folder))
+                {
+                    continue;
+                }
+
+                AssetDatabase.DeleteAsset(folder);
+            }
+        }
+
+        private static List<string> GetGeneratedFoldersDeepestFirst(string rootFolder)
+        {
+            List<string> folders = new() { rootFolder };
+            CollectGeneratedFoldersRecursive(rootFolder, folders);
+            folders.Sort((left, right) => right.Length.CompareTo(left.Length));
+            return folders;
+        }
+
+        private static void CollectGeneratedFoldersRecursive(string folder, List<string> results)
+        {
+            foreach (string childFolder in AssetDatabase.GetSubFolders(folder))
+            {
+                results.Add(childFolder);
+                CollectGeneratedFoldersRecursive(childFolder, results);
+            }
+        }
+
+        private static bool IsGeneratedFolderEmpty(string folder)
+        {
+            string absoluteFolderPath = ToAbsoluteProjectPath(folder);
+            if (string.IsNullOrWhiteSpace(absoluteFolderPath) || !Directory.Exists(absoluteFolderPath))
+            {
+                return true;
+            }
+
+            bool hasNonMetaFiles = Directory.EnumerateFiles(absoluteFolderPath)
+                .Any(file => !string.Equals(Path.GetExtension(file), ".meta", StringComparison.OrdinalIgnoreCase));
+
+            return !hasNonMetaFiles && AssetDatabase.GetSubFolders(folder).Length == 0;
         }
 
         private static bool TryIntersectRayMesh(
