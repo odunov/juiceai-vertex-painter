@@ -4,7 +4,6 @@
   "references": [
     "JuiceAI.VertexPainter.Runtime",
     "JuiceAI.VertexPainter.Editor",
-    "JuiceAI.VertexPainter.EnvironmentMaster.Editor",
     "UnityEditor.TestRunner",
     "UnityEngine.TestRunner"
   ],

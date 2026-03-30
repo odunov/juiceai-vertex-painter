@@ -44,26 +44,6 @@ namespace JuiceAI.VertexPainter.Tests.Editor
         }
 
         [Test]
-        public void EnvironmentMasterAdapter_UsesRedChannelByDefault()
-        {
-            Shader shader = Shader.Find("JuiceAI/Environment/JA_EnvironmentMaster");
-            Assert.That(shader, Is.Not.Null);
-
-            GameObject gameObject = new("AdapterTest");
-            MeshRenderer renderer = gameObject.AddComponent<MeshRenderer>();
-            Material[] materials = { new(shader) };
-            renderer.sharedMaterials = materials;
-
-            EnvironmentMasterVertexPaintAdapter adapter = new();
-
-            Assert.That(adapter.CanHandle(renderer, materials), Is.True);
-            Assert.That(adapter.GetDefaultChannel(renderer, materials), Is.EqualTo(VertexPaintChannel.Red));
-
-            UnityEngine.Object.DestroyImmediate(materials[0]);
-            UnityEngine.Object.DestroyImmediate(gameObject);
-        }
-
-        [Test]
         [Ignore("Synced container mode disables scene-local paint authoring.")]
         public void CurrentPaintTarget_UsesSceneInstance_ForSceneSelections()
         {

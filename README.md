@@ -13,7 +13,6 @@ Prefab-aware vertex painting for Unity 6.
 
 - `Runtime/`: runtime data and binding components.
 - `Editor/`: authoring window, asset generation, and editor tooling.
-- `Adapters/`: optional editor adapters for project-specific shader workflows.
 - `Tests/Editor/`: EditMode tests for authoring and runtime behavior.
 
 ## Using it in another project
@@ -28,3 +27,4 @@ You can use this package in three common ways:
 
 - Generated paint assets are project content and should stay under `Assets/`, not inside the package.
 - If you want to run the package tests from a non-embedded install, add `com.juiceai.vertex-painter` to the project's `testables` list.
+- If you want shader-specific editor hints or default channels later, implement `IVertexPaintMaterialAdapter` in your own project or a companion package.
